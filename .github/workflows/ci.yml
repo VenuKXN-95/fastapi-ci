@@ -521,9 +521,9 @@ jobs:
             BUILD_DATE=${{ github.event.head_commit.timestamp }}
             VCS_REF=${{ github.sha }}
             VERSION=1.0.0
-          # BuildKit provenance & SBOM (supply-chain security)
-          provenance: true
-          sbom: true
+          # BuildKit provenance & SBOM (set false when loading into docker daemon)
+          provenance: false
+          sbom: false
           platforms: linux/amd64
 
       - name: "🐳 Stage 13 · Docker — print image digest"
