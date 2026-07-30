@@ -6,7 +6,6 @@ No secret is ever hardcoded in this file.
 """
 
 from functools import lru_cache
-from typing import List
 
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -29,7 +28,7 @@ class Settings(BaseSettings):
     APP_VERSION: str = Field(default="1.0.0")
     ENVIRONMENT: str = Field(default="development")
     DEBUG: bool = Field(default=False)
-    ALLOWED_ORIGINS: List[str] = Field(default=["*"])
+    ALLOWED_ORIGINS: list[str] = Field(default=["*"])
 
     # ---------------------------------------------------------------------------
     # Security  (injected via GitHub Secrets in CI)
@@ -50,7 +49,7 @@ class Settings(BaseSettings):
     # ---------------------------------------------------------------------------
     # Server
     # ---------------------------------------------------------------------------
-    HOST: str = Field(default="0.0.0.0")
+    HOST: str = Field(default="0.0.0.0")  # noqa: S104 # nosec B104
     PORT: int = Field(default=8000)
     WORKERS: int = Field(default=1)
 

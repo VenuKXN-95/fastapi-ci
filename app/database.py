@@ -6,7 +6,7 @@ The client is created once at startup and shared across all requests
 via FastAPI dependency injection.
 """
 
-from typing import AsyncGenerator, Optional
+from collections.abc import AsyncGenerator
 
 from motor.motor_asyncio import AsyncIOMotorClient, AsyncIOMotorDatabase
 
@@ -15,7 +15,7 @@ from app.config import settings
 # ---------------------------------------------------------------------------
 # Module-level client — shared across the entire app lifetime
 # ---------------------------------------------------------------------------
-_mongo_client: Optional[AsyncIOMotorClient] = None  # type: ignore[type-arg]
+_mongo_client: AsyncIOMotorClient | None = None  # type: ignore[type-arg]
 
 
 def get_mongo_client() -> AsyncIOMotorClient:  # type: ignore[type-arg]
@@ -54,7 +54,9 @@ def get_database() -> AsyncIOMotorDatabase:  # type: ignore[type-arg]
     return get_mongo_client()[settings.MONGODB_DB_NAME]
 
 
-async def get_db() -> AsyncGenerator[AsyncIOMotorDatabase, None]:  # type: ignore[type-arg]
+async def get_db() -> (
+    AsyncGenerator[AsyncIOMotorDatabase, None]  # type: ignore[type-arg]
+):
     """
     FastAPI dependency that yields the database for a single request.
 

@@ -6,10 +6,9 @@ We map it explicitly to a plain string `id` in API responses
 so clients never see MongoDB internals.
 """
 
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
-
 
 # ---------------------------------------------------------------------------
 # Request schemas  (what clients send)
@@ -20,7 +19,7 @@ class ItemCreate(BaseModel):
     """Payload for creating a new item."""
 
     name: str = Field(..., min_length=1, max_length=200, examples=["Widget A"])
-    description: Optional[str] = Field(None, max_length=1000)
+    description: str | None = Field(None, max_length=1000)
     price: float = Field(..., gt=0, examples=[9.99])
     is_active: bool = Field(True)
 
@@ -28,10 +27,10 @@ class ItemCreate(BaseModel):
 class ItemUpdate(BaseModel):
     """Payload for partially updating an item (all fields optional)."""
 
-    name: Optional[str] = Field(None, min_length=1, max_length=200)
-    description: Optional[str] = Field(None, max_length=1000)
-    price: Optional[float] = Field(None, gt=0)
-    is_active: Optional[bool] = None
+    name: str | None = Field(None, min_length=1, max_length=200)
+    description: str | None = Field(None, max_length=1000)
+    price: float | None = Field(None, gt=0)
+    is_active: bool | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -46,9 +45,9 @@ class ItemResponse(BaseModel):
     `id` is the MongoDB ObjectId serialised as a plain string.
     """
 
-    id: str          # MongoDB _id mapped to id — clients see a plain string
+    id: str  # MongoDB _id mapped to id — clients see a plain string
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     price: float
     is_active: bool
 

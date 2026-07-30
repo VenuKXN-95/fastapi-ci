@@ -6,7 +6,7 @@ require a real MongoDB server. The actual DB calls go through the
 `get_db` dependency override in each test module.
 """
 
-from typing import AsyncGenerator
+from collections.abc import AsyncGenerator
 from unittest.mock import AsyncMock, patch
 
 import pytest

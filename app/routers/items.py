@@ -5,8 +5,6 @@ Full async CRUD using Motor (async MongoDB driver).
 The collection name is `items` in the database configured via MONGODB_DB_NAME.
 """
 
-from typing import List
-
 from bson import ObjectId
 from bson.errors import InvalidId
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -33,7 +31,7 @@ def _object_id(item_id: str) -> ObjectId:
         raise HTTPException(
             status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
             detail=f"'{item_id}' is not a valid MongoDB ObjectId.",
-        )
+        ) from None
 
 
 # ---------------------------------------------------------------------------
@@ -43,12 +41,12 @@ def _object_id(item_id: str) -> ObjectId:
 
 @router.get(
     "/items",
-    response_model=List[ItemResponse],
+    response_model=list[ItemResponse],
     summary="List all items",
 )
 async def list_items(
     db: AsyncIOMotorDatabase = Depends(get_db),  # type: ignore[type-arg]
-) -> List[ItemResponse]:
+) -> list[ItemResponse]:
     """Return all items from MongoDB."""
     cursor = db[COLLECTION].find()
     docs = await cursor.to_list(length=1000)
