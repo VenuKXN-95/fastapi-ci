@@ -536,7 +536,7 @@ jobs:
       # STAGE 14 — Docker Image Vulnerability Scan (Trivy)
       # ========================================================================
       - name: "🔍 Stage 14 · Trivy — image vulnerability scan (table)"
-        uses: aquasecurity/trivy-action@v0.29.0
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: "${{ env.IMAGE_NAME }}:latest"
           format: "table"
@@ -549,7 +549,7 @@ jobs:
 
       - name: "🔍 Stage 14 · Trivy — image vulnerability scan (SARIF)"
         id: trivy-sarif
-        uses: aquasecurity/trivy-action@v0.29.0
+        uses: aquasecurity/trivy-action@0.28.0
         with:
           image-ref: "${{ env.IMAGE_NAME }}:latest"
           format: "sarif"
