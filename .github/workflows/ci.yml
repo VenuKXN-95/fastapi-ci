@@ -442,6 +442,7 @@ jobs:
         uses: SonarSource/sonarqube-scan-action@v5
         with:
           args: >
+            -Dsonar.organization=venukxn-95
             -Dsonar.projectKey=VenuKXN-95_fastapi-ci
             -Dsonar.projectName=fastapi-ci
             -Dsonar.sources=app
