@@ -212,13 +212,13 @@ jobs:
       - name: "🎨 Stage 5 · Black — check formatting"
         id: black
         run: |
-          black --check --diff --color app/ tests/
+          black --check --diff app/ tests/
         continue-on-error: false
 
       - name: "🎨 Stage 5 · isort — check import order"
         id: isort
         run: |
-          isort --check-only --diff --color app/ tests/
+          isort --check-only --diff app/ tests/
         continue-on-error: false
 
       # ========================================================================
@@ -569,7 +569,7 @@ jobs:
       # STAGE 15 — Upload Build Artifacts
       # ========================================================================
       - name: "📤 Stage 15 · Upload — coverage & test reports"
-        if: always()
+        if: always() && hashFiles('coverage.xml', 'junit.xml') != ''
         uses: actions/upload-artifact@v4
         with:
           name: "test-reports-${{ github.run_number }}"
@@ -580,7 +580,7 @@ jobs:
           retention-days: 14
 
       - name: "📤 Stage 15 · Upload — Bandit security report"
-        if: always()
+        if: always() && hashFiles('bandit-report.json') != ''
         uses: actions/upload-artifact@v4
         with:
           name: "bandit-report-${{ github.run_number }}"
@@ -590,7 +590,7 @@ jobs:
           retention-days: 14
 
       - name: "📤 Stage 15 · Upload — pip-audit vulnerability report"
-        if: always()
+        if: always() && hashFiles('pip-audit-report.json') != ''
         uses: actions/upload-artifact@v4
         with:
           name: "pip-audit-report-${{ github.run_number }}"
@@ -608,7 +608,7 @@ jobs:
           retention-days: 14
 
       - name: "📤 Stage 15 · Upload — linting reports"
-        if: always()
+        if: always() && hashFiles('/tmp/flake8-report.txt', '/tmp/mypy-report.txt') != ''
         uses: actions/upload-artifact@v4
         with:
           name: "lint-reports-${{ github.run_number }}"
