@@ -84,7 +84,6 @@ permissions:
 env:
   PYTHON_VERSION: "3.12"
   PIP_DISABLE_PIP_VERSION_CHECK: "1"
-  PIP_NO_CACHE_DIR: "0"           # allow cache — overridden per step if needed
   PYTHONDONTWRITEBYTECODE: "1"
   PYTHONUNBUFFERED: "1"
   FORCE_COLOR: "1"                 # coloured output in logs
@@ -560,7 +559,7 @@ jobs:
           severity: "CRITICAL,HIGH"
 
       - name: "🔍 Stage 14 · Trivy — upload SARIF to GitHub Security tab"
-        if: always()
+        if: always() && hashFiles('trivy-report.sarif') != ''
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-report.sarif
@@ -599,7 +598,7 @@ jobs:
           retention-days: 14
 
       - name: "📤 Stage 15 · Upload — Trivy image scan report"
-        if: always()
+        if: always() && hashFiles('trivy-report.sarif', 'trivy-report.txt') != ''
         uses: actions/upload-artifact@v4
         with:
           name: "trivy-report-${{ github.run_number }}"
