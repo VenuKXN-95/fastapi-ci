@@ -406,9 +406,6 @@ jobs:
       # ========================================================================
       - name: "🔏 Stage 11 · Gitleaks — secret detection"
         uses: gitleaks/gitleaks-action@v2
-        with:
-          config-path: .gitleaks.toml
-          # Scan the full git history (fetch-depth: 0 already set above)
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           # Suppress Gitleaks licence nag for self-hosted or OSS repos:
@@ -560,7 +557,7 @@ jobs:
 
       - name: "🔍 Stage 14 · Trivy — upload SARIF to GitHub Security tab"
         if: always() && hashFiles('trivy-report.sarif') != ''
-        uses: github/codeql-action/upload-sarif@v3
+        uses: github/codeql-action/upload-sarif@v4
         with:
           sarif_file: trivy-report.sarif
           category: "trivy-container"

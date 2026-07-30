@@ -44,6 +44,11 @@ RUN pip install --no-cache-dir --require-hashes --requirement requirements.txt |
 # ---------------------------------------------------------------------------
 FROM python:3.12-slim AS runtime
 
+# Reproducible build arguments for runtime stage
+ARG BUILD_DATE
+ARG VCS_REF
+ARG VERSION
+
 # OCI Image labels
 LABEL org.opencontainers.image.title="FastAPI CI Service" \
       org.opencontainers.image.description="Production-grade FastAPI service" \
