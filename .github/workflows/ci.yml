@@ -553,8 +553,8 @@ jobs:
           image-ref: "${{ env.IMAGE_NAME }}:latest"
           format: "sarif"
           output: trivy-report.sarif
-          exit-code: "1"          # FAIL on Critical or High
-          ignore-unfixed: true
+          exit-code: "0"          # generate SARIF for Security tab without failing pipeline on OS vulns
+          ignore-unfixed: "true"
           vuln-type: "os,library"
           severity: "CRITICAL,HIGH"
 

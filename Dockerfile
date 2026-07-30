@@ -54,7 +54,7 @@ LABEL org.opencontainers.image.title="FastAPI CI Service" \
       org.opencontainers.image.licenses="MIT"
 
 # Runtime system dependencies only
-RUN apt-get update && apt-get install -y --no-install-recommends \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y --no-install-recommends \
       libpq5 \
       curl \
     && rm -rf /var/lib/apt/lists/* \
