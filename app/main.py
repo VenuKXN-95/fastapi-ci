@@ -2,21 +2,43 @@
 FastAPI Application Entry Point.
 
 Production-grade FastAPI application with structured routing,
-health checks, and middleware.
+health checks, middleware, and MongoDB lifespan management.
 """
+
+from contextlib import asynccontextmanager
+from typing import AsyncGenerator
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import settings
+from app.database import close_mongo_connection, connect_to_mongo
 from app.routers import health, items
 
+
+# ---------------------------------------------------------------------------
+# Lifespan — startup & shutdown hooks
+# ---------------------------------------------------------------------------
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Manage MongoDB connection across the application lifetime."""
+    # ── Startup ──
+    await connect_to_mongo()
+    yield
+    # ── Shutdown ──
+    await close_mongo_connection()
+
+
+# ---------------------------------------------------------------------------
+# Application
+# ---------------------------------------------------------------------------
 app = FastAPI(
     title=settings.APP_NAME,
     version=settings.APP_VERSION,
-    description="Production-grade FastAPI application",
+    description="Production-grade FastAPI application with MongoDB",
     docs_url="/docs" if settings.ENVIRONMENT != "production" else None,
     redoc_url="/redoc" if settings.ENVIRONMENT != "production" else None,
+    lifespan=lifespan,
 )
 
 # ---------------------------------------------------------------------------

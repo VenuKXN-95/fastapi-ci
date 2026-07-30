@@ -117,13 +117,10 @@ jobs:
     # Secrets are masked automatically by GitHub Actions.
     # --------------------------------------------------------------------------
     env:
-      DATABASE_URL:     ${{ secrets.DATABASE_URL }}
       SECRET_KEY:       ${{ secrets.SECRET_KEY }}
       JWT_SECRET:       ${{ secrets.JWT_SECRET }}
-      API_KEY:          ${{ secrets.API_KEY }}
-      OPENAI_API_KEY:   ${{ secrets.OPENAI_API_KEY }}
       MONGODB_URI:      ${{ secrets.MONGODB_URI }}
-      POSTGRES_URI:     ${{ secrets.POSTGRES_URI }}
+      OPENAI_API_KEY:   ${{ secrets.OPENAI_API_KEY }}
 
     steps:
 
@@ -191,12 +188,9 @@ jobs:
           MISSING=()
 
           # Mandatory secrets — fail immediately if any are absent or empty
-          [[ -z "${DATABASE_URL:-}"   ]] && MISSING+=("DATABASE_URL")
-          [[ -z "${SECRET_KEY:-}"     ]] && MISSING+=("SECRET_KEY")
-          [[ -z "${JWT_SECRET:-}"     ]] && MISSING+=("JWT_SECRET")
-          [[ -z "${API_KEY:-}"        ]] && MISSING+=("API_KEY")
-          [[ -z "${POSTGRES_URI:-}"   ]] && MISSING+=("POSTGRES_URI")
-          [[ -z "${MONGODB_URI:-}"    ]] && MISSING+=("MONGODB_URI")
+          [[ -z "${SECRET_KEY:-}"  ]] && MISSING+=("SECRET_KEY")
+          [[ -z "${JWT_SECRET:-}" ]] && MISSING+=("JWT_SECRET")
+          [[ -z "${MONGODB_URI:-}" ]] && MISSING+=("MONGODB_URI")
 
           if [[ ${#MISSING[@]} -gt 0 ]]; then
             echo "::error::❌ The following mandatory GitHub Secrets are missing or empty:"

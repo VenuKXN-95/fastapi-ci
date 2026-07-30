@@ -12,6 +12,8 @@ pytest-asyncio==0.25.0
 pytest-cov==6.0.0
 pytest-xdist==3.6.1          # parallel test execution
 httpx==0.28.1                 # async test client for FastAPI
+mongomock-motor==0.0.34       # in-process MongoDB mock (no real DB needed)
+anyio[trio]==4.7.0            # async test transport backend
 
 # ---------------------------------------------------------------------------
 # Code Formatting

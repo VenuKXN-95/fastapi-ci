@@ -43,7 +43,8 @@ class Settings(BaseSettings):
     # ---------------------------------------------------------------------------
     DATABASE_URL: str = Field(default="sqlite:///./test.db")
     POSTGRES_URI: str = Field(default="")
-    MONGODB_URI: str = Field(default="")
+    MONGODB_URI: str = Field(default="mongodb://localhost:27017")
+    MONGODB_DB_NAME: str = Field(default="fastapi_db")
     OPENAI_API_KEY: str = Field(default="")
 
     # ---------------------------------------------------------------------------

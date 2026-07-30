@@ -1,48 +1,39 @@
 """
-Items router.
+Items router — MongoDB backed.
 
-Demonstrates a standard CRUD resource endpoint pattern.
+Full async CRUD using Motor (async MongoDB driver).
+The collection name is `items` in the database configured via MONGODB_DB_NAME.
 """
 
-from typing import List, Optional
+from typing import List
 
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel
+from bson import ObjectId
+from bson.errors import InvalidId
+from fastapi import APIRouter, Depends, HTTPException, status
+from motor.motor_asyncio import AsyncIOMotorDatabase
+
+from app.database import get_db
+from app.models.item import ItemCreate, ItemResponse, ItemUpdate, item_from_doc
 
 router = APIRouter()
 
-
-# ---------------------------------------------------------------------------
-# Schemas
-# ---------------------------------------------------------------------------
-
-
-class ItemBase(BaseModel):
-    """Base item schema."""
-
-    name: str
-    description: Optional[str] = None
-    price: float
-    is_active: bool = True
-
-
-class ItemCreate(ItemBase):
-    """Schema for creating an item."""
-
-
-class ItemResponse(ItemBase):
-    """Schema for item responses."""
-
-    id: int
-
-    model_config = {"from_attributes": True}
+COLLECTION = "items"
 
 
 # ---------------------------------------------------------------------------
-# In-memory store (replace with real DB layer)
+# Helper
 # ---------------------------------------------------------------------------
-_store: dict[int, ItemResponse] = {}
-_counter: int = 0
+
+
+def _object_id(item_id: str) -> ObjectId:
+    """Convert a string to ObjectId, raising 422 on invalid format."""
+    try:
+        return ObjectId(item_id)
+    except (InvalidId, Exception):
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail=f"'{item_id}' is not a valid MongoDB ObjectId.",
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -50,10 +41,18 @@ _counter: int = 0
 # ---------------------------------------------------------------------------
 
 
-@router.get("/items", response_model=List[ItemResponse], summary="List all items")
-async def list_items() -> List[ItemResponse]:
-    """Return all stored items."""
-    return list(_store.values())
+@router.get(
+    "/items",
+    response_model=List[ItemResponse],
+    summary="List all items",
+)
+async def list_items(
+    db: AsyncIOMotorDatabase = Depends(get_db),  # type: ignore[type-arg]
+) -> List[ItemResponse]:
+    """Return all items from MongoDB."""
+    cursor = db[COLLECTION].find()
+    docs = await cursor.to_list(length=1000)
+    return [item_from_doc(doc) for doc in docs]
 
 
 @router.post(
@@ -62,24 +61,69 @@ async def list_items() -> List[ItemResponse]:
     status_code=status.HTTP_201_CREATED,
     summary="Create an item",
 )
-async def create_item(payload: ItemCreate) -> ItemResponse:
-    """Create and store a new item."""
-    global _counter
-    _counter += 1
-    item = ItemResponse(id=_counter, **payload.model_dump())
-    _store[_counter] = item
-    return item
+async def create_item(
+    payload: ItemCreate,
+    db: AsyncIOMotorDatabase = Depends(get_db),  # type: ignore[type-arg]
+) -> ItemResponse:
+    """Insert a new item into MongoDB and return it with its generated _id."""
+    doc = payload.model_dump()
+    result = await db[COLLECTION].insert_one(doc)
+    created = await db[COLLECTION].find_one({"_id": result.inserted_id})
+    if created is None:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Item was inserted but could not be retrieved.",
+        )
+    return item_from_doc(created)
 
 
-@router.get("/items/{item_id}", response_model=ItemResponse, summary="Get item by ID")
-async def get_item(item_id: int) -> ItemResponse:
-    """Retrieve a single item by its ID."""
-    if item_id not in _store:
+@router.get(
+    "/items/{item_id}",
+    response_model=ItemResponse,
+    summary="Get item by ID",
+)
+async def get_item(
+    item_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),  # type: ignore[type-arg]
+) -> ItemResponse:
+    """Fetch a single item by its MongoDB ObjectId string."""
+    doc = await db[COLLECTION].find_one({"_id": _object_id(item_id)})
+    if doc is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Item with id={item_id} not found",
+            detail=f"Item '{item_id}' not found.",
         )
-    return _store[item_id]
+    return item_from_doc(doc)
+
+
+@router.patch(
+    "/items/{item_id}",
+    response_model=ItemResponse,
+    summary="Partially update an item",
+)
+async def update_item(
+    item_id: str,
+    payload: ItemUpdate,
+    db: AsyncIOMotorDatabase = Depends(get_db),  # type: ignore[type-arg]
+) -> ItemResponse:
+    """Update only the provided fields of an existing item."""
+    updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+    if not updates:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="No fields provided for update.",
+        )
+    result = await db[COLLECTION].update_one(
+        {"_id": _object_id(item_id)},
+        {"$set": updates},
+    )
+    if result.matched_count == 0:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail=f"Item '{item_id}' not found.",
+        )
+    updated = await db[COLLECTION].find_one({"_id": _object_id(item_id)})
+    return item_from_doc(updated)  # type: ignore[arg-type]
 
 
 @router.delete(
@@ -87,11 +131,14 @@ async def get_item(item_id: int) -> ItemResponse:
     status_code=status.HTTP_204_NO_CONTENT,
     summary="Delete an item",
 )
-async def delete_item(item_id: int) -> None:
-    """Delete an item by its ID."""
-    if item_id not in _store:
+async def delete_item(
+    item_id: str,
+    db: AsyncIOMotorDatabase = Depends(get_db),  # type: ignore[type-arg]
+) -> None:
+    """Delete an item by its MongoDB ObjectId."""
+    result = await db[COLLECTION].delete_one({"_id": _object_id(item_id)})
+    if result.deleted_count == 0:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Item with id={item_id} not found",
+            detail=f"Item '{item_id}' not found.",
         )
-    del _store[item_id]

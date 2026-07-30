@@ -2,33 +2,33 @@
 Health endpoint tests.
 """
 
-from fastapi.testclient import TestClient
-
-from app.main import app
-
-client = TestClient(app)
+import pytest
+from httpx import AsyncClient
 
 
-def test_root_endpoint() -> None:
+@pytest.mark.asyncio
+async def test_root_endpoint(async_client: AsyncClient) -> None:
     """Root endpoint should return 200 with welcome message."""
-    response = client.get("/")
+    response = await async_client.get("/")
     assert response.status_code == 200
     data = response.json()
     assert "message" in data
     assert "version" in data
 
 
-def test_health_check() -> None:
+@pytest.mark.asyncio
+async def test_health_check(async_client: AsyncClient) -> None:
     """Health endpoint should return healthy status."""
-    response = client.get("/api/v1/health")
+    response = await async_client.get("/api/v1/health")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "healthy"
 
 
-def test_readiness_check() -> None:
+@pytest.mark.asyncio
+async def test_readiness_check(async_client: AsyncClient) -> None:
     """Readiness endpoint should return ready status."""
-    response = client.get("/api/v1/ready")
+    response = await async_client.get("/api/v1/ready")
     assert response.status_code == 200
     data = response.json()
     assert data["status"] == "ready"
