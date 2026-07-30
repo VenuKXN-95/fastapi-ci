@@ -1,0 +1,190 @@
+# ==============================================================================
+# pyproject.toml — Single source of truth for all Python tooling
+# ==============================================================================
+
+[build-system]
+requires      = ["setuptools>=75.0", "wheel"]
+build-backend = "setuptools.backends.legacy:build"
+
+# ==============================================================================
+# Project Metadata
+# ==============================================================================
+[project]
+name        = "fastapi-ci"
+version     = "1.0.0"
+description = "Production-grade FastAPI service with CI/CD pipeline"
+readme      = "README.md"
+requires-python = ">=3.12"
+license     = { text = "MIT" }
+
+authors = [
+  { name = "Your Name", email = "you@example.com" },
+]
+
+keywords = ["fastapi", "ci", "devops", "python"]
+
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Programming Language :: Python :: 3.12",
+  "Framework :: FastAPI",
+  "License :: OSI Approved :: MIT License",
+  "Operating System :: OS Independent",
+]
+
+# ==============================================================================
+# pytest
+# ==============================================================================
+[tool.pytest.ini_options]
+minversion     = "8.0"
+testpaths      = ["tests"]
+asyncio_mode   = "auto"
+addopts        = [
+  "-v",
+  "--tb=short",
+  "--strict-markers",
+  "--cov=app",
+  "--cov-report=term-missing",
+  "--cov-report=xml:coverage.xml",
+  "--cov-report=html:htmlcov",
+  "--cov-fail-under=80",
+  "--junitxml=junit.xml",
+]
+markers = [
+  "unit: pure unit tests (no I/O)",
+  "integration: tests that hit external services",
+  "slow: tests that are intentionally slow",
+]
+
+# ==============================================================================
+# Coverage
+# ==============================================================================
+[tool.coverage.run]
+source         = ["app"]
+branch         = true
+omit           = [
+  "*/tests/*",
+  "*/migrations/*",
+  "*/__init__.py",
+]
+
+[tool.coverage.report]
+show_missing   = true
+skip_covered   = false
+fail_under     = 80
+exclude_lines  = [
+  "pragma: no cover",
+  "def __repr__",
+  "if TYPE_CHECKING:",
+  "raise NotImplementedError",
+  "@abstractmethod",
+]
+
+# ==============================================================================
+# Black (formatting)
+# ==============================================================================
+[tool.black]
+line-length    = 88
+target-version = ["py312"]
+include        = '\.pyi?$'
+exclude        = '''
+/(
+    \.git
+  | \.venv
+  | build
+  | dist
+  | migrations
+)/
+'''
+
+# ==============================================================================
+# isort (import ordering)
+# ==============================================================================
+[tool.isort]
+profile                   = "black"
+line_length               = 88
+known_first_party         = ["app"]
+known_third_party         = ["fastapi", "pydantic", "sqlalchemy"]
+multi_line_output         = 3
+include_trailing_comma    = true
+force_grid_wrap           = 0
+use_parentheses           = true
+ensure_newline_before_comments = true
+skip_glob                 = [".venv/*", "migrations/*"]
+
+# ==============================================================================
+# Ruff (fast linter)
+# ==============================================================================
+[tool.ruff]
+target-version = "py312"
+line-length    = 88
+fix            = false                    # never auto-fix in CI
+
+[tool.ruff.lint]
+select = [
+  "E",   # pycodestyle errors
+  "W",   # pycodestyle warnings
+  "F",   # Pyflakes
+  "UP",  # pyupgrade
+  "B",   # flake8-bugbear
+  "SIM", # flake8-simplify
+  "I",   # isort
+  "N",   # pep8-naming
+  "S",   # flake8-bandit (basic)
+  "C4",  # flake8-comprehensions
+  "PTH", # use pathlib
+  "RUF", # Ruff-specific
+]
+ignore = [
+  "S101",  # use of assert — OK in tests
+  "B008",  # function call in default arg — needed by FastAPI Depends
+  "N818",  # Exception names — we prefer plain names
+]
+per-file-ignores = { "tests/**" = ["S101", "S106"] }
+
+[tool.ruff.lint.isort]
+known-first-party = ["app"]
+
+# ==============================================================================
+# Mypy (static type checking)
+# ==============================================================================
+[tool.mypy]
+python_version          = "3.12"
+strict                  = true
+warn_return_any         = true
+warn_unused_configs     = true
+warn_unused_ignores     = true
+disallow_untyped_defs   = true
+disallow_incomplete_defs = true
+check_untyped_defs      = true
+no_implicit_optional    = true
+show_error_codes        = true
+show_column_numbers     = true
+pretty                  = true
+
+# FastAPI / Pydantic compatibility
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = [
+  "motor.*",
+  "pymongo.*",
+  "jose.*",
+  "passlib.*",
+  "alembic.*",
+]
+ignore_missing_imports = true
+
+[tool.pydantic-mypy]
+init_forbid_extra      = true
+init_typed             = true
+warn_required_dynamic_aliases = true
+
+# ==============================================================================
+# Bandit (security linter)
+# ==============================================================================
+[tool.bandit]
+targets    = ["app"]
+exclude_dirs = ["tests", ".venv", "migrations"]
+skips      = []          # never skip anything in production
+severity   = "medium"    # fail on medium, high, critical
+confidence = "medium"

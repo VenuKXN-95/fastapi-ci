@@ -1,0 +1,33 @@
+# ==============================================================================
+# FastAPI Production Runtime Dependencies
+# ==============================================================================
+
+# Core Framework
+fastapi==0.115.6
+uvicorn[standard]==0.32.1
+pydantic==2.10.4
+pydantic-settings==2.7.0
+
+# HTTP Client
+httpx==0.28.1
+
+# Security
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+python-multipart==0.0.20
+
+# Database (async SQLAlchemy + asyncpg driver)
+sqlalchemy==2.0.36
+asyncpg==0.30.0
+alembic==1.14.0
+
+# MongoDB
+motor==3.6.0
+pymongo==4.10.1
+
+# OpenAI
+openai==1.58.1
+
+# Observability
+structlog==24.4.0
+sentry-sdk[fastapi]==2.19.2

@@ -1,0 +1,685 @@
+# ==============================================================================
+# .github/workflows/ci.yml
+# Production-Grade Continuous Integration Pipeline
+# FastAPI / Python 3.12 / Docker / GitHub Actions
+# ==============================================================================
+#
+# STAGES (in order):
+#   1.  Checkout Repository
+#   2.  Setup Python 3.12
+#   3.  Install Dependencies
+#   4.  Validate Environment Variables (GitHub Secrets)
+#   5.  Code Formatting  (black, isort)
+#   6.  Linting          (flake8, ruff)
+#   7.  Static Type Check (mypy)
+#   8.  Unit Testing     (pytest + coverage ≥ 80%)
+#   9.  Security Scan    (bandit)
+#   10. Dependency Scan  (pip-audit)
+#   11. Secret Scanning  (gitleaks)
+#   12. SonarQube Analysis
+#   13. Docker Build     (buildx, layer cache, SHA + latest tags)
+#   14. Docker Image Scan (trivy → SARIF)
+#   15. Upload Artifacts
+#   16. Job Summary
+#
+# ==============================================================================
+
+name: "🚀 CI Pipeline — FastAPI"
+
+# ==============================================================================
+# Triggers
+# ==============================================================================
+on:
+  pull_request:
+    branches:
+      - main
+      - develop
+      - "feature/**"
+      - "bugfix/**"
+      - "hotfix/**"
+      - "release/**"
+    types: [opened, synchronize, reopened]
+
+  push:
+    branches:
+      - main
+      - develop
+      - "feature/**"
+      - "bugfix/**"
+      - "hotfix/**"
+      - "release/**"
+
+  workflow_dispatch:
+    inputs:
+      skip_sonar:
+        description: "Skip SonarQube analysis (useful for forks)"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+      debug:
+        description: "Enable debug logging"
+        required: false
+        default: "false"
+        type: choice
+        options: ["false", "true"]
+
+# ==============================================================================
+# Concurrency — cancel stale runs on the same branch/PR
+# ==============================================================================
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# ==============================================================================
+# Minimal default permissions (least privilege)
+# Specific jobs override as needed.
+# ==============================================================================
+permissions:
+  contents: read
+
+# ==============================================================================
+# Global environment variables
+# ==============================================================================
+env:
+  PYTHON_VERSION: "3.12"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+  PIP_NO_CACHE_DIR: "0"           # allow cache — overridden per step if needed
+  PYTHONDONTWRITEBYTECODE: "1"
+  PYTHONUNBUFFERED: "1"
+  FORCE_COLOR: "1"                 # coloured output in logs
+  IMAGE_NAME: "fastapi-ci"
+
+# ==============================================================================
+# Jobs
+# ==============================================================================
+jobs:
+
+  # ============================================================================
+  # JOB 1 — ci
+  # Single-job pipeline (fail-fast, no parallelism overhead for a monorepo)
+  # ============================================================================
+  ci:
+    name: "🔬 CI — Quality, Security & Build"
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    # --------------------------------------------------------------------------
+    # Job-level permissions (override global defaults)
+    # --------------------------------------------------------------------------
+    permissions:
+      contents: read            # checkout
+      security-events: write    # upload SARIF to Security tab
+      actions: read             # read workflow metadata
+
+    # --------------------------------------------------------------------------
+    # Runtime secrets injected as environment variables
+    # Secrets are masked automatically by GitHub Actions.
+    # --------------------------------------------------------------------------
+    env:
+      DATABASE_URL:     ${{ secrets.DATABASE_URL }}
+      SECRET_KEY:       ${{ secrets.SECRET_KEY }}
+      JWT_SECRET:       ${{ secrets.JWT_SECRET }}
+      API_KEY:          ${{ secrets.API_KEY }}
+      OPENAI_API_KEY:   ${{ secrets.OPENAI_API_KEY }}
+      MONGODB_URI:      ${{ secrets.MONGODB_URI }}
+      POSTGRES_URI:     ${{ secrets.POSTGRES_URI }}
+
+    steps:
+
+      # ========================================================================
+      # STAGE 1 — Checkout Repository
+      # ========================================================================
+      - name: "📥 Stage 1 · Checkout repository"
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history so gitleaks can scan all commits
+          fetch-depth: 0
+          # Persist credentials for SonarQube PR decoration
+          persist-credentials: false
+
+      # ========================================================================
+      # STAGE 2 — Setup Python
+      # ========================================================================
+      - name: "🐍 Stage 2 · Setup Python ${{ env.PYTHON_VERSION }}"
+        id: setup-python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+          # Enable pip dependency cache keyed on requirements files
+          cache: "pip"
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: "🐍 Stage 2 · Print Python & pip versions"
+        run: |
+          python --version
+          pip --version
+
+      # ========================================================================
+      # STAGE 3 — Install Dependencies
+      # ========================================================================
+      - name: "📦 Stage 3 · Upgrade pip"
+        run: python -m pip install --upgrade pip
+
+      - name: "📦 Stage 3 · Install runtime dependencies"
+        run: |
+          pip install --no-cache-dir \
+            --requirement requirements.txt
+
+      - name: "📦 Stage 3 · Install dev/CI dependencies"
+        run: |
+          pip install --no-cache-dir \
+            --requirement requirements-dev.txt
+
+      - name: "📦 Stage 3 · Print installed packages"
+        id: pip-list
+        run: |
+          pip list --format=columns | tee /tmp/pip-packages.txt
+          PACKAGE_COUNT=$(pip list | tail -n +3 | wc -l)
+          echo "package_count=${PACKAGE_COUNT}" >> "$GITHUB_OUTPUT"
+
+      # ========================================================================
+      # STAGE 4 — Validate Environment Variables (GitHub Secrets)
+      # ========================================================================
+      - name: "🔐 Stage 4 · Validate mandatory secrets"
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          MISSING=()
+
+          # Mandatory secrets — fail immediately if any are absent or empty
+          [[ -z "${DATABASE_URL:-}"   ]] && MISSING+=("DATABASE_URL")
+          [[ -z "${SECRET_KEY:-}"     ]] && MISSING+=("SECRET_KEY")
+          [[ -z "${JWT_SECRET:-}"     ]] && MISSING+=("JWT_SECRET")
+          [[ -z "${API_KEY:-}"        ]] && MISSING+=("API_KEY")
+          [[ -z "${POSTGRES_URI:-}"   ]] && MISSING+=("POSTGRES_URI")
+          [[ -z "${MONGODB_URI:-}"    ]] && MISSING+=("MONGODB_URI")
+
+          if [[ ${#MISSING[@]} -gt 0 ]]; then
+            echo "::error::❌ The following mandatory GitHub Secrets are missing or empty:"
+            for SECRET in "${MISSING[@]}"; do
+              echo "::error::   → ${SECRET}"
+            done
+            echo ""
+            echo "  Add them at:"
+            echo "  Repository → Settings → Secrets and variables → Actions"
+            exit 1
+          fi
+
+          echo "✅ All mandatory secrets are present and non-empty."
+
+      # ========================================================================
+      # STAGE 5 — Code Formatting
+      # ========================================================================
+      - name: "🎨 Stage 5 · Black — check formatting"
+        id: black
+        run: |
+          black --check --diff --color app/ tests/
+        continue-on-error: false
+
+      - name: "🎨 Stage 5 · isort — check import order"
+        id: isort
+        run: |
+          isort --check-only --diff --color app/ tests/
+        continue-on-error: false
+
+      # ========================================================================
+      # STAGE 6 — Linting
+      # ========================================================================
+      - name: "🔍 Stage 6 · flake8 — PEP 8 & bug patterns"
+        id: flake8
+        run: |
+          flake8 app/ tests/ \
+            --max-line-length=88 \
+            --extend-ignore=E203,W503 \
+            --max-complexity=10 \
+            --statistics \
+            --tee \
+            --output-file=/tmp/flake8-report.txt
+        continue-on-error: false
+
+      - name: "🔍 Stage 6 · ruff — fast linter"
+        id: ruff
+        run: |
+          ruff check app/ tests/ \
+            --output-format=github
+        continue-on-error: false
+
+      # ========================================================================
+      # STAGE 7 — Static Type Checking
+      # ========================================================================
+      - name: "🧩 Stage 7 · mypy — static type checking"
+        id: mypy
+        run: |
+          mypy app/ \
+            --ignore-missing-imports \
+            --show-error-codes \
+            --pretty \
+            --no-error-summary \
+            | tee /tmp/mypy-report.txt
+        continue-on-error: false
+
+      # ========================================================================
+      # STAGE 8 — Unit Testing
+      # ========================================================================
+      - name: "🧪 Stage 8 · pytest — unit tests & coverage"
+        id: pytest
+        run: |
+          pytest \
+            --tb=short \
+            --strict-markers \
+            -v \
+            --cov=app \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --cov-report=html:htmlcov \
+            --cov-fail-under=80 \
+            --junitxml=junit.xml \
+            tests/
+        env:
+          # Use a safe in-memory SQLite for tests
+          DATABASE_URL: "sqlite:///./test.db"
+          POSTGRES_URI: "postgresql+asyncpg://test:test@localhost:5432/testdb"
+          MONGODB_URI:  "mongodb://test:test@localhost:27017/testdb"
+        continue-on-error: false
+
+      - name: "🧪 Stage 8 · Display test summary"
+        if: always()
+        run: |
+          echo "## Test Summary" >> "$GITHUB_STEP_SUMMARY"
+          if [[ -f junit.xml ]]; then
+            python - <<'EOF'
+          import xml.etree.ElementTree as ET, sys
+          tree = ET.parse("junit.xml")
+          root = tree.getroot()
+          suite = root if root.tag == "testsuite" else root.find("testsuite")
+          if suite is None:
+              print("Could not parse junit.xml")
+              sys.exit(0)
+          tests   = suite.attrib.get("tests", "?")
+          failed  = suite.attrib.get("failures", "?")
+          errors  = suite.attrib.get("errors", "?")
+          skipped = suite.attrib.get("skipped", "?")
+          time    = suite.attrib.get("time", "?")
+          print(f"| Tests | Failed | Errors | Skipped | Time |")
+          print(f"|-------|--------|--------|---------|------|")
+          print(f"| {tests} | {failed} | {errors} | {skipped} | {time}s |")
+          EOF
+          fi
+
+      # ========================================================================
+      # STAGE 9 — Security Scan (Bandit)
+      # ========================================================================
+      - name: "🛡️ Stage 9 · Bandit — Python security scan"
+        id: bandit
+        run: |
+          bandit \
+            --recursive app/ \
+            --severity-level medium \
+            --confidence-level medium \
+            --format json \
+            --output bandit-report.json \
+            --exit-zero          # we parse the JSON and fail manually below
+          bandit \
+            --recursive app/ \
+            --severity-level medium \
+            --confidence-level medium \
+            --format txt \
+            --output bandit-report.txt \
+            || true
+
+          # Fail if any MEDIUM/HIGH/CRITICAL issues found
+          python - <<'EOF'
+          import json, sys
+          with open("bandit-report.json") as f:
+              report = json.load(f)
+          issues = report.get("results", [])
+          bad    = [i for i in issues if i["issue_severity"] in ("MEDIUM", "HIGH", "CRITICAL")]
+          if bad:
+              print(f"❌ Bandit found {len(bad)} Medium/High/Critical security issue(s):")
+              for i in bad:
+                  print(f"   [{i['issue_severity']}] {i['issue_text']} "
+                        f"@ {i['filename']}:{i['line_number']}")
+              sys.exit(1)
+          print(f"✅ Bandit: no Medium/High/Critical issues found. "
+                f"({len(issues)} LOW issues ignored)")
+          EOF
+        continue-on-error: false
+
+      # ========================================================================
+      # STAGE 10 — Dependency Vulnerability Scan (pip-audit)
+      # ========================================================================
+      #
+      # WHY pip-audit OVER safety?
+      # ──────────────────────────
+      # • pip-audit is maintained by the Python Packaging Authority (PyPA) —
+      #   the same body that maintains pip itself — ensuring long-term support.
+      # • It queries the OSV (Open Source Vulnerabilities) database
+      #   (https://osv.dev) maintained by Google, which aggregates CVEs from
+      #   NVD, GitHub Advisories, and language-specific feeds.
+      # • No API key required for OSV; the PyPI Advisory database is also
+      #   supported natively.
+      # • safety (v3+) requires a paid API key for full database access,
+      #   making it unsuitable for open-source or budget-constrained CI.
+      # • pip-audit outputs machine-readable JSON and integrates cleanly with
+      #   the GitHub Actions annotation system.
+      # ========================================================================
+      - name: "🔎 Stage 10 · pip-audit — dependency vulnerability scan"
+        id: pip-audit
+        run: |
+          pip-audit \
+            --requirement requirements.txt \
+            --format json \
+            --output pip-audit-report.json \
+            --progress-spinner off \
+            || (
+              echo "::error::❌ pip-audit found vulnerable packages — see report below"
+              cat pip-audit-report.json | python -c "
+          import json,sys
+          data=json.load(sys.stdin)
+          deps=data.get('dependencies',[])
+          for d in deps:
+              for v in d.get('vulns',[]):
+                  print(f\"  [{v['id']}] {d['name']}=={d['version']}: {v['description'][:120]}\")
+          "
+              exit 1
+            )
+
+          # Parse and pretty-print vulnerability summary
+          python - <<'EOF'
+          import json, sys
+          with open("pip-audit-report.json") as f:
+              data = json.load(f)
+          vulns = [(d["name"], d["version"], v["id"], v["description"][:100])
+                   for d in data.get("dependencies", [])
+                   for v in d.get("vulns", [])]
+          if vulns:
+              print(f"❌ {len(vulns)} vulnerability/ies found:")
+              for name, ver, vid, desc in vulns:
+                  print(f"   [{vid}] {name}=={ver}: {desc}")
+              sys.exit(1)
+          print(f"✅ pip-audit: 0 vulnerabilities found in "
+                f"{len(data.get('dependencies', []))} packages.")
+          EOF
+        continue-on-error: false
+
+      # ========================================================================
+      # STAGE 11 — Secret Scanning (Gitleaks)
+      # ========================================================================
+      - name: "🔏 Stage 11 · Gitleaks — secret detection"
+        uses: gitleaks/gitleaks-action@v2
+        with:
+          config-path: .gitleaks.toml
+          # Scan the full git history (fetch-depth: 0 already set above)
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Suppress Gitleaks licence nag for self-hosted or OSS repos:
+          GITLEAKS_LICENSE: ${{ secrets.GITLEAKS_LICENSE }}
+        continue-on-error: false
+
+      # ========================================================================
+      # STAGE 12 — SonarQube Analysis
+      # ========================================================================
+      #
+      # HOW TO CONFIGURE:
+      # ─────────────────
+      # SonarCloud (recommended for GitHub):
+      #   1. Create a free account at https://sonarcloud.io
+      #   2. Import your GitHub repository
+      #   3. Generate a token: User → My Account → Security → Generate Token
+      #   4. Set GitHub Secret SONAR_TOKEN  = <the generated token>
+      #   5. Set GitHub Secret SONAR_HOST_URL = https://sonarcloud.io
+      #
+      # Self-hosted SonarQube:
+      #   1. Install SonarQube (docker run sonarqube or on-prem)
+      #   2. Create a project & generate a project token
+      #   3. Set SONAR_TOKEN   = <project token>
+      #   4. Set SONAR_HOST_URL = https://your-sonarqube.example.com
+      #
+      # sonar-project.properties in the repo root wires up:
+      #   sonar.python.coverage.reportPaths=coverage.xml  (from pytest-cov)
+      #   sonar.python.xunit.reportPath=junit.xml          (from pytest --junitxml)
+      # ========================================================================
+      - name: "📊 Stage 12 · SonarQube — static analysis & quality gate"
+        if: |
+          (secrets.SONAR_TOKEN != '' && secrets.SONAR_HOST_URL != '') &&
+          github.event.inputs.skip_sonar != 'true'
+        uses: SonarSource/sonarqube-scan-action@v5
+        with:
+          args: >
+            -Dsonar.projectKey=VenuKXN-95_fastapi-ci
+            -Dsonar.projectName=fastapi-ci
+            -Dsonar.sources=app
+            -Dsonar.tests=tests
+            -Dsonar.python.coverage.reportPaths=coverage.xml
+            -Dsonar.python.xunit.reportPath=junit.xml
+            -Dsonar.scm.revision=${{ github.sha }}
+            -Dsonar.pullrequest.key=${{ github.event.pull_request.number }}
+            -Dsonar.pullrequest.branch=${{ github.head_ref }}
+            -Dsonar.pullrequest.base=${{ github.base_ref }}
+        env:
+          SONAR_TOKEN:    ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      # Wait for the SonarQube Quality Gate result
+      - name: "📊 Stage 12 · SonarQube — Quality Gate check"
+        if: |
+          (secrets.SONAR_TOKEN != '' && secrets.SONAR_HOST_URL != '') &&
+          github.event.inputs.skip_sonar != 'true'
+        uses: SonarSource/sonarqube-quality-gate-action@v1
+        timeout-minutes: 5
+        env:
+          SONAR_TOKEN:    ${{ secrets.SONAR_TOKEN }}
+          SONAR_HOST_URL: ${{ secrets.SONAR_HOST_URL }}
+
+      # ========================================================================
+      # STAGE 13 — Docker Build
+      # ========================================================================
+      - name: "🐳 Stage 13 · Docker — set up QEMU (multi-arch)"
+        uses: docker/setup-qemu-action@v3
+
+      - name: "🐳 Stage 13 · Docker — set up Buildx"
+        uses: docker/setup-buildx-action@v3
+        with:
+          # BuildKit is enabled by default in Buildx
+          driver: docker-container
+          buildkitd-flags: --debug
+
+      - name: "🐳 Stage 13 · Docker — extract metadata"
+        id: docker-meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          tags: |
+            type=sha,prefix=sha-,format=short
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/main' }}
+            type=ref,event=branch
+            type=ref,event=pr
+            type=semver,pattern={{version}}
+          labels: |
+            org.opencontainers.image.title=FastAPI CI Service
+            org.opencontainers.image.description=Production-grade FastAPI service
+            org.opencontainers.image.source=https://github.com/VenuKXN-95/fastapi-ci
+            org.opencontainers.image.revision=${{ github.sha }}
+
+      - name: "🐳 Stage 13 · Docker — build image (no push)"
+        id: docker-build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          # Build only — do NOT push in the CI job
+          # Pushing happens in the separate CD workflow
+          push: false
+          # Load the image into the local Docker daemon for Trivy scanning
+          load: true
+          tags: ${{ steps.docker-meta.outputs.tags }}
+          labels: ${{ steps.docker-meta.outputs.labels }}
+          # Layer caching via GitHub Actions cache
+          cache-from: type=gha
+          cache-to:   type=gha,mode=max
+          # Pass OCI build args
+          build-args: |
+            BUILD_DATE=${{ github.event.head_commit.timestamp }}
+            VCS_REF=${{ github.sha }}
+            VERSION=1.0.0
+          # BuildKit provenance & SBOM (supply-chain security)
+          provenance: true
+          sbom: true
+          platforms: linux/amd64
+
+      - name: "🐳 Stage 13 · Docker — print image digest"
+        run: |
+          echo "Image digest: ${{ steps.docker-build.outputs.digest }}"
+          docker images ${{ env.IMAGE_NAME }}
+
+      # ========================================================================
+      # STAGE 14 — Docker Image Vulnerability Scan (Trivy)
+      # ========================================================================
+      - name: "🔍 Stage 14 · Trivy — image vulnerability scan (table)"
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: "${{ env.IMAGE_NAME }}:latest"
+          format: "table"
+          exit-code: "0"          # do not fail here — we use SARIF step for gate
+          ignore-unfixed: false
+          vuln-type: "os,library"
+          severity: "CRITICAL,HIGH,MEDIUM"
+          output: trivy-report.txt
+        continue-on-error: true
+
+      - name: "🔍 Stage 14 · Trivy — image vulnerability scan (SARIF)"
+        id: trivy-sarif
+        uses: aquasecurity/trivy-action@0.30.0
+        with:
+          image-ref: "${{ env.IMAGE_NAME }}:latest"
+          format: "sarif"
+          output: trivy-report.sarif
+          exit-code: "1"          # FAIL on Critical or High
+          ignore-unfixed: false
+          vuln-type: "os,library"
+          severity: "CRITICAL,HIGH"
+
+      - name: "🔍 Stage 14 · Trivy — upload SARIF to GitHub Security tab"
+        if: always()
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-report.sarif
+          category: "trivy-container"
+
+      # ========================================================================
+      # STAGE 15 — Upload Build Artifacts
+      # ========================================================================
+      - name: "📤 Stage 15 · Upload — coverage & test reports"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "test-reports-${{ github.run_number }}"
+          path: |
+            coverage.xml
+            junit.xml
+            htmlcov/
+          retention-days: 14
+
+      - name: "📤 Stage 15 · Upload — Bandit security report"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "bandit-report-${{ github.run_number }}"
+          path: |
+            bandit-report.json
+            bandit-report.txt
+          retention-days: 14
+
+      - name: "📤 Stage 15 · Upload — pip-audit vulnerability report"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "pip-audit-report-${{ github.run_number }}"
+          path: pip-audit-report.json
+          retention-days: 14
+
+      - name: "📤 Stage 15 · Upload — Trivy image scan report"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "trivy-report-${{ github.run_number }}"
+          path: |
+            trivy-report.txt
+            trivy-report.sarif
+          retention-days: 14
+
+      - name: "📤 Stage 15 · Upload — linting reports"
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: "lint-reports-${{ github.run_number }}"
+          path: |
+            /tmp/flake8-report.txt
+            /tmp/mypy-report.txt
+          retention-days: 14
+
+      # ========================================================================
+      # STAGE 16 — Job Summary
+      # ========================================================================
+      - name: "📋 Stage 16 · Generate GitHub Job Summary"
+        if: always()
+        shell: bash
+        run: |
+          cat >> "$GITHUB_STEP_SUMMARY" << 'SUMMARY'
+          # 🚀 CI Pipeline Summary — FastAPI
+
+          | Field             | Value                                             |
+          |-------------------|---------------------------------------------------|
+          | **Workflow**      | ${{ github.workflow }}                            |
+          | **Run #**         | ${{ github.run_number }}                          |
+          | **Commit SHA**    | `${{ github.sha }}`                              |
+          | **Branch**        | `${{ github.ref_name }}`                         |
+          | **Triggered by**  | `${{ github.event_name }}`                       |
+          | **Actor**         | `${{ github.actor }}`                            |
+
+          ---
+
+          ## 🐍 Environment
+
+          | Item              | Value                                             |
+          |-------------------|---------------------------------------------------|
+          | **Python**        | ${{ env.PYTHON_VERSION }}                         |
+          | **Packages**      | ${{ steps.pip-list.outputs.package_count }} installed |
+          | **Runner OS**     | ubuntu-latest                                     |
+
+          ---
+
+          ## ✅ Gate Results
+
+          | Stage                     | Status                                              |
+          |---------------------------|-----------------------------------------------------|
+          | 🎨 Black (formatting)      | ${{ steps.black.conclusion  == 'success' && '✅ Pass' || '❌ Fail' }} |
+          | 🎨 isort (imports)         | ${{ steps.isort.conclusion  == 'success' && '✅ Pass' || '❌ Fail' }} |
+          | 🔍 flake8 (lint)           | ${{ steps.flake8.conclusion == 'success' && '✅ Pass' || '❌ Fail' }} |
+          | 🔍 ruff (lint)             | ${{ steps.ruff.conclusion   == 'success' && '✅ Pass' || '❌ Fail' }} |
+          | 🧩 mypy (types)            | ${{ steps.mypy.conclusion   == 'success' && '✅ Pass' || '❌ Fail' }} |
+          | 🧪 pytest (tests)          | ${{ steps.pytest.conclusion == 'success' && '✅ Pass' || '❌ Fail' }} |
+          | 🛡️ Bandit (SAST)          | ${{ steps.bandit.conclusion == 'success' && '✅ Pass' || '❌ Fail' }} |
+          | 🔎 pip-audit (deps)        | ${{ steps.pip-audit.conclusion == 'success' && '✅ Pass' || '❌ Fail' }} |
+          | 🐳 Docker build            | ${{ steps.docker-build.conclusion == 'success' && '✅ Pass' || '❌ Fail' }} |
+          | 🔍 Trivy (image scan)      | ${{ steps.trivy-sarif.conclusion == 'success' && '✅ Pass' || '❌ Fail' }} |
+
+          ---
+
+          ## 🐳 Docker Image
+
+          | Field             | Value                                             |
+          |-------------------|---------------------------------------------------|
+          | **Image name**    | `${{ env.IMAGE_NAME }}`                          |
+          | **Digest**        | `${{ steps.docker-build.outputs.digest }}`       |
+          | **Tags**          | `${{ steps.docker-meta.outputs.tags }}`          |
+
+          ---
+
+          > 📁 Artifacts (coverage, JUnit XML, HTML report, Bandit, Trivy) are attached to this run.
+          > Retention: **14 days**
+          SUMMARY

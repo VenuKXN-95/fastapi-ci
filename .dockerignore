@@ -1,0 +1,67 @@
+# ==============================================================================
+# Docker Ignore — keeps the build context lean and secure
+# ==============================================================================
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+*.so
+*.egg
+*.egg-info/
+dist/
+build/
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Development / CI tooling — NOT needed at runtime
+requirements-dev.txt
+.github/
+.git/
+.gitignore
+
+# Tests (not shipped in production image)
+tests/
+htmlcov/
+.pytest_cache/
+coverage.xml
+coverage.json
+junit.xml
+reports/
+bandit-report*
+trivy-report*
+
+# Type-checking caches
+.mypy_cache/
+.ruff_cache/
+
+# Editor / OS artifacts
+.idea/
+.vscode/
+*.swp
+*~
+.DS_Store
+Thumbs.db
+
+# Secrets & environment files — NEVER in the image
+.env
+.env.*
+secrets/
+*.pem
+*.key
+*.crt
+
+# Docs & misc
+README.md
+*.md
+docs/
+sonar-project.properties
+.sonar/
+
+# Logs
+*.log
+logs/
