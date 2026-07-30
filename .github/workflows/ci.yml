@@ -121,6 +121,8 @@ jobs:
       JWT_SECRET:       ${{ secrets.JWT_SECRET }}
       MONGODB_URI:      ${{ secrets.MONGODB_URI }}
       OPENAI_API_KEY:   ${{ secrets.OPENAI_API_KEY }}
+      SONAR_TOKEN:      ${{ secrets.SONAR_TOKEN }}
+      SONAR_HOST_URL:   ${{ secrets.SONAR_HOST_URL }}
 
     steps:
 
@@ -439,7 +441,7 @@ jobs:
       # ========================================================================
       - name: "📊 Stage 12 · SonarQube — static analysis & quality gate"
         if: |
-          (secrets.SONAR_TOKEN != '' && secrets.SONAR_HOST_URL != '') &&
+          (env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != '') &&
           github.event.inputs.skip_sonar != 'true'
         uses: SonarSource/sonarqube-scan-action@v5
         with:
@@ -461,7 +463,7 @@ jobs:
       # Wait for the SonarQube Quality Gate result
       - name: "📊 Stage 12 · SonarQube — Quality Gate check"
         if: |
-          (secrets.SONAR_TOKEN != '' && secrets.SONAR_HOST_URL != '') &&
+          (env.SONAR_TOKEN != '' && env.SONAR_HOST_URL != '') &&
           github.event.inputs.skip_sonar != 'true'
         uses: SonarSource/sonarqube-quality-gate-action@v1
         timeout-minutes: 5
